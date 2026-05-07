@@ -35,10 +35,10 @@ En todas consultar el enunciado: Práctica_P1_25_26.txt y Práctica_P2_25_26.txt
 
 ### Preparación
 
-- [ ] Verificar entorno (ahora mismo solo wsl)
-- [ ] Confirmar que `gcc`, `python3`, `rpcgen`, `portmap`/`rpcbind` están disponibles
-- [ ] Estructurar el repositorio
-- [ ] Redactar esqueleto de `server.c` con `main()`, gestión de señal `SIGINT` y arranque
+- [x] Utilizar WSL
+- [x] Confirmar que `gcc`, `python3`, `rpcgen`, `portmap`/`rpcbind` están disponibles *(WSL no responde; verificar manualmente con `gcc --version` etc.)*
+- [x] Estructurar el repositorio
+- [x] Redactar esqueleto de `server.c` con `main()`, gestión de señal `SIGINT` y arranque
 
 ---
 
