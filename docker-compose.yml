@@ -1,0 +1,30 @@
+﻿services:
+
+  # Servidor ONC-RPC de log de operaciones
+  # Inicia rpcbind (necesario para el portmapper) y luego rpc_server.
+  rpc:
+    build: .
+    command: sh -c "rpcbind && sleep 1 && ./rpc_server"
+    privileged: true        # rpcbind necesita enlazar al puerto 111 (<1024)
+
+  # Servidor de mensajería
+  # Espera 2 s a que rpcbind esté listo en el contenedor rpc.
+  srv:
+    build: .
+    command: sh -c "sleep 2 && ./server -p 8888"
+    depends_on:
+      - rpc
+    environment:
+      LOG_RPC_IP: rpc       # el servidor llama al RPC usando el hostname "rpc"
+
+  # Contenedor de pruebas (cliente + web service)
+  # Ejecuta web_service.py en localhost:7789 y después todos los tests
+  # Python apuntando al servidor de mensajería (srv:8888).
+  cli:
+    build: .
+    command: bash /app/run_docker_tests.sh
+    depends_on:
+      - srv
+    environment:
+      SERVER_HOST: srv
+      SERVER_PORT: "8888"

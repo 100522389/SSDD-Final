@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 # run_prev.sh — Suite completa de pruebas
 #
 # Pasos:
@@ -22,7 +22,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
-# ── Intérprete Python ─────────────────────────────────────────────────────────
+# Intérprete Python
 if [ -x /tmp/ssdd_venv/bin/python3 ]; then
     PYTHON=/tmp/ssdd_venv/bin/python3
 else
@@ -31,7 +31,7 @@ fi
 
 SERVER_PORT=${SERVER_PORT:-8888}
 
-# ── Flags opcionales ──────────────────────────────────────────────────────────
+# Flags opcionales
 SKIP_RPC=0
 SKIP_WEB=0
 for arg in "$@"; do
@@ -41,7 +41,7 @@ for arg in "$@"; do
     esac
 done
 
-# ── Limpieza al salir ─────────────────────────────────────────────────────────
+# Limpieza al salir
 cleanup() {
     pkill -f "./rpc_server"        2>/dev/null || true
     pkill -f "server -p $SERVER_PORT" 2>/dev/null || true
@@ -52,7 +52,7 @@ trap cleanup EXIT
 
 cleanup
 
-# ── Contadores globales ───────────────────────────────────────────────────────
+# Contadores globales
 PHASE1_RC=0
 INTEG_P1_RC=0
 P2_RC=0
@@ -60,12 +60,12 @@ WEB_UNIT_RC=0
 WEB_INTEG_RC=0
 RPC_RC=0
 
-# ── 1. Compilar ───────────────────────────────────────────────────────────────
+# 1. Compilar
 echo "=== Compilando ==="
 make all
 echo ""
 
-# ── 2. test_phase1.sh (netcat, protocolo P1) ──────────────────────────────────
+# 2. test_phase1.sh (netcat, protocolo P1)
 echo "=== test_phase1.sh ==="
 if command -v nc >/dev/null 2>&1; then
     bash test_phase1.sh || PHASE1_RC=$?
@@ -74,7 +74,7 @@ else
 fi
 echo ""
 
-# ── Arrancar rpc_server ───────────────────────────────────────────────────────
+# Arrancar rpc_server
 RPC_PID=""
 if [ "$SKIP_RPC" -eq 0 ] && command -v rpcbind >/dev/null 2>&1; then
     rpcbind 2>/dev/null || true
@@ -94,7 +94,7 @@ else
     SKIP_RPC=1
 fi
 
-# ── Arrancar servidor de mensajería ──────────────────────────────────────────
+# Arrancar servidor de mensajería
 if [ -n "$RPC_PID" ]; then
     LOG_RPC_IP=localhost ./server -p "$SERVER_PORT" > /tmp/srv_prev.log 2>&1 &
 else
@@ -110,12 +110,12 @@ fi
 echo "server      PID=$SRV_PID (puerto=$SERVER_PORT)"
 echo ""
 
-# ── 3. test_integration_p1.py ────────────────────────────────────────────────
+# 3. test_integration_p1.py
 echo "=== test_integration_p1.py ==="
 "$PYTHON" test_integration_p1.py -s 127.0.0.1 -p "$SERVER_PORT" || INTEG_P1_RC=$?
 echo ""
 
-# ── 4. test_p2.py ────────────────────────────────────────────────────────────
+# 4. test_p2.py
 echo "=== test_p2.py ==="
 "$PYTHON" test_p2.py -s localhost -p "$SERVER_PORT" || P2_RC=$?
 echo ""
@@ -125,13 +125,13 @@ kill "$SRV_PID" 2>/dev/null || true
 wait "$SRV_PID" 2>/dev/null || true
 [ -n "$RPC_PID" ] && { kill "$RPC_PID" 2>/dev/null || true; wait "$RPC_PID" 2>/dev/null || true; }
 
-# ── 5. test_web_service.py — unitarios (sin servidor SOAP) ───────────────────
+# 5. test_web_service.py — unitarios (sin servidor SOAP)
 if [ "$SKIP_WEB" -eq 0 ]; then
     echo "=== test_web_service.py (unit) ==="
     "$PYTHON" test_web_service.py unit || WEB_UNIT_RC=$?
     echo ""
 
-    # ── 6. test_web_service.py — integración SOAP ────────────────────────────
+    # 6. test_web_service.py — integración SOAP
     echo "=== test_web_service.py (integración SOAP) ==="
     "$PYTHON" web_service.py > /tmp/ws_prev.log 2>&1 &
     WS_PID=$!
@@ -149,7 +149,7 @@ else
     echo ""
 fi
 
-# ── 7. test_rpc.sh ───────────────────────────────────────────────────────────
+# 7. test_rpc.sh
 if [ "$SKIP_RPC" -eq 0 ]; then
     echo "=== test_rpc.sh ==="
     bash test_rpc.sh || RPC_RC=$?
@@ -159,7 +159,7 @@ else
     echo ""
 fi
 
-# ── Resumen final ─────────────────────────────────────────────────────────────
+# Resumen final
 echo "================================================================="
 echo " RESUMEN DE RESULTADOS"
 echo "================================================================="

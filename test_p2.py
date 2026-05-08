@@ -1,4 +1,4 @@
-"""
+﻿"""
 test_p2.py – Tests de la Parte 2 (Fase 5): SENDATTACH, USERS P2, GETFILE.
 
 Uso:
@@ -74,7 +74,7 @@ def send_str_sock(s, text):
     s.sendall((text + '\0').encode())
 
 
-# ── BLOQUE 1: SENDATTACH a usuario conectado ──────────────────────────────────
+# BLOQUE 1: SENDATTACH a usuario conectado
 
 def test_sendattach_connected(server, port):
     print("\n=== Bloque 1: SENDATTACH a usuario conectado ===")
@@ -170,7 +170,7 @@ def test_sendattach_connected(server, port):
     client.unregister('sa_bob')
 
 
-# ── BLOQUE 2: SENDATTACH a usuario desconectado (cola) ───────────────────────
+# BLOQUE 2: SENDATTACH a usuario desconectado (cola)
 
 def test_sendattach_queued(server, port):
     print("\n=== Bloque 2: SENDATTACH a usuario desconectado (cola) ===")
@@ -264,7 +264,7 @@ def test_sendattach_queued(server, port):
     client.unregister('sq_bob')
 
 
-# ── BLOQUE 3: USERS P2 — formato user::ip::port ───────────────────────────────
+# BLOQUE 3: USERS P2 — formato user::ip::port
 
 def test_users_p2(server, port):
     print("\n=== Bloque 3: USERS P2 (user::ip::port) ===")
@@ -340,7 +340,7 @@ def test_users_p2(server, port):
     client._listen_sock = None
 
 
-# ── BLOQUE 4: GETFILE — transferencia P2P ─────────────────────────────────────
+# BLOQUE 4: GETFILE — transferencia P2P
 
 def test_getfile(server, port):
     print("\n=== Bloque 4: GETFILE (transferencia P2P) ===")
@@ -361,7 +361,8 @@ def test_getfile(server, port):
     # Conectar bob con client.connect (gestiona _listen_sock y _listener_loop)
     client.connect('gf_bob')
     bob_port = client._listen_port
-    bob_ip   = server  # mismo host en tests locales
+    # P2P: alice y bob corren en el mismo proceso/contenedor → usar localhost
+    bob_ip   = "127.0.0.1"
 
     # Alimentar _connected_users manualmente (simula haber hecho USERS P2)
     # (bob es quien tiene el fichero)
@@ -405,7 +406,7 @@ def test_getfile(server, port):
     client._listen_sock = None
 
 
-# ── BLOQUE 5: GETFILE — usuario no conectado ──────────────────────────────────
+# BLOQUE 5: GETFILE — usuario no conectado
 
 def test_getfile_not_connected(server, port):
     print("\n=== Bloque 5: GETFILE con usuario no conectado ===")
@@ -434,8 +435,6 @@ def test_getfile_not_connected(server, port):
     client._username = None
     client._listen_sock = None
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def run_tests(server, port):
     test_sendattach_connected(server, port)

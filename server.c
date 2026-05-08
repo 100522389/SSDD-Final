@@ -400,8 +400,11 @@ static void handle_connect(int sock, const char *username,
     }
 }
 
-/* DISCONNECT: marca al usuario como desconectado y borra su IP/puerto. */
-static void handle_disconnect(int sock, const char *username)
+/* DISCONNECT: marca al usuario como desconectado y borra su IP/puerto.
+ * Solo se acepta si la petición proviene de la misma IP con la que el usuario
+ * se conectó (requisito del protocolo §8.4). */
+static void handle_disconnect(int sock, const char *username,
+                               const char *client_ip)
 {
     unsigned char code;
 
@@ -412,6 +415,10 @@ static void handle_disconnect(int sock, const char *username)
         printf("s> DISCONNECT %s FAIL\n", username);
     } else if (u->state == DISCONNECTED) {
         code = 2;
+        printf("s> DISCONNECT %s FAIL\n", username);
+    } else if (strcmp(u->ip, client_ip) != 0) {
+        /* IP no coincide con la registrada en CONNECT */
+        code = 3;
         printf("s> DISCONNECT %s FAIL\n", username);
     } else {
         memset(u->ip,   0, sizeof(u->ip));
@@ -639,7 +646,7 @@ static void *handle_client(void *arg)
         char user[MAX_NAME];
         if (recv_str(sock, user, sizeof(user)) == 0) {
             call_log_rpc(user, "DISCONNECT");
-            handle_disconnect(sock, user);
+            handle_disconnect(sock, user, client_ip);
         }
 
     } else if (strcmp(op, "SEND") == 0) {
