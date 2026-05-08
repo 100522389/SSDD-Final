@@ -1,6 +1,5 @@
 /*
  * log.x  –  Interfaz ONC-RPC del servicio de log de operaciones
- * Sistemas Distribuidos – UC3M 2025-2026
  *
  * Generar stubs con:
  *   rpcgen -a log.x

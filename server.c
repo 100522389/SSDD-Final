@@ -1,9 +1,6 @@
-/*
- * server.c  –  Servidor de mensajería distribuida
- *
- * Uso:  ./server -p <puerto>
- *
- * Compila con:  gcc -std=gnu99 -Wall -Wextra -pthread -o server server.c
+/* server.c – Servidor de mensajería distribuida.
+ * Uso: ./server -p <puerto>
+ * Variable de entorno opcional: LOG_RPC_IP=<ip> para activar el log RPC.
  */
 
 #define _GNU_SOURCE          /* habilita getifaddrs y extensiones POSIX */
@@ -19,8 +16,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <ifaddrs.h>
-
-/* Constantes */
+#include <rpc/rpc.h>
+#include "log.h"
 
 #define MAX_NAME   256   /* longitud máxima de nombre de usuario / operación */
 #define MAX_MSG    256   /* longitud máxima del cuerpo del mensaje           */
@@ -28,9 +25,6 @@
 #define MAX_PORT     8   /* longitud máxima del puerto en formato cadena     */
 #define BACKLOG     32   /* cola de conexiones pendientes                    */
 
-/* Tipos de datos */
-
-/* Estado de un usuario registrado */
 typedef enum { DISCONNECTED = 0, CONNECTED = 1 } user_state_t;
 
 /* Mensaje pendiente de entrega */
@@ -53,13 +47,39 @@ typedef struct user {
     struct user    *next;
 } user_t;
 
-/* Estado global */
+static user_t          *g_users       = NULL;
+static pthread_mutex_t  g_mutex       = PTHREAD_MUTEX_INITIALIZER;
+static int              g_server_fd   = -1;
+static CLIENT          *g_rpc_client  = NULL;
+static pthread_mutex_t  g_rpc_mutex   = PTHREAD_MUTEX_INITIALIZER;
+static char             g_rpc_ip[64]  = "";   /* vacío → RPC desactivado */
 
-static user_t          *g_users     = NULL;
-static pthread_mutex_t  g_mutex     = PTHREAD_MUTEX_INITIALIZER;
-static int              g_server_fd = -1;   /* socket de escucha */
+/* Envía una entrada de log al servidor ONC-RPC. No-op si LOG_RPC_IP no está definida
+ * o el servidor no responde (degradación silenciosa). */
+static void call_log_rpc(const char *username, const char *operation)
+{
+    if (g_rpc_ip[0] == '\0') return;
 
-/* Manejador de señal SIGINT */
+    pthread_mutex_lock(&g_rpc_mutex);
+
+    if (g_rpc_client == NULL) {
+        g_rpc_client = clnt_create(g_rpc_ip, LOG_PROG, LOG_VERS, "tcp");
+        if (g_rpc_client == NULL) {
+            pthread_mutex_unlock(&g_rpc_mutex);
+            return;
+        }
+    }
+
+    char *u  = (char *)username;
+    char *op = (char *)operation;
+    int  *res = log_operation_1(u, op, g_rpc_client);
+    if (res == NULL) {
+        clnt_destroy(g_rpc_client);
+        g_rpc_client = NULL;
+    }
+
+    pthread_mutex_unlock(&g_rpc_mutex);
+}
 
 static void sigint_handler(int sig)
 {
@@ -69,12 +89,7 @@ static void sigint_handler(int sig)
     exit(0);
 }
 
-/* Utilidades de red */
-
-/*
- * get_local_ip – rellena buf con la primera IPv4 no-loopback del sistema.
- * Si no la encuentra usa "127.0.0.1".
- */
+/* Rellena buf con la primera IPv4 no-loopback; usa "127.0.0.1" si no encuentra ninguna. */
 static void get_local_ip(char *buf, size_t len)
 {
     struct ifaddrs *ifaddr, *ifa;
@@ -94,10 +109,7 @@ static void get_local_ip(char *buf, size_t len)
     freeifaddrs(ifaddr);
 }
 
-/*
- * send_str – envía una cadena NUL-terminada (incluyendo '\0') por sock.
- * Devuelve 0 en éxito, -1 en error.
- */
+/* Envía una cadena NUL-terminada por sock. Devuelve 0 en éxito, -1 en error. */
 static int send_str(int sock, const char *s)
 {
     size_t  len   = strlen(s) + 1;
@@ -111,10 +123,7 @@ static int send_str(int sock, const char *s)
     return 0;
 }
 
-/*
- * recv_str – recibe una cadena NUL-terminada en buf (máx buflen bytes).
- * Devuelve 0 en éxito, -1 en error o desbordamiento de buffer.
- */
+/* Recibe una cadena NUL-terminada en buf. Devuelve 0 en éxito, -1 en error o desbordamiento. */
 static int recv_str(int sock, char *buf, size_t buflen)
 {
     size_t  i = 0;
@@ -129,10 +138,7 @@ static int recv_str(int sock, char *buf, size_t buflen)
     return -1;  /* desbordamiento de buffer */
 }
 
-/*
- * connect_to – abre una conexión TCP a ip:port.
- * Devuelve el fd del socket en éxito, -1 en error.
- */
+/* Abre una conexión TCP a ip:port. Devuelve el fd del socket, o -1 en error. */
 static int connect_to(const char *ip, const char *port)
 {
     struct sockaddr_in addr;
@@ -149,13 +155,7 @@ static int connect_to(const char *ip, const char *port)
     return s;
 }
 
-/* Entrega de mensajes */
-
-/*
- * deliver_message – conecta al hilo de escucha de un cliente y envía
- * un mensaje según el protocolo §8.6 (sin adjunto) o §2.3 (con adjunto).
- * Devuelve 0 en éxito, -1 en error de red.
- */
+/* Conecta al hilo de escucha del cliente y entrega un mensaje. Devuelve 0 o -1. */
 static int deliver_message(const char *ip, const char *port,
                             const message_t *m)
 {
@@ -180,10 +180,7 @@ static int deliver_message(const char *ip, const char *port,
     return ok;
 }
 
-/*
- * send_delivery_ack – notifica al remitente que su mensaje fue entregado
- * (protocolo §8.6 ACK para SEND, §2.3 ACK para SENDATTACH).
- */
+/* Notifica al remitente la entrega exitosa de un mensaje. */
 static int send_delivery_ack(const char *ip, const char *port,
                               unsigned int id, const char *filename)
 {
@@ -207,9 +204,9 @@ static int send_delivery_ack(const char *ip, const char *port,
     return ok;
 }
 
-/* Operaciones sobre la lista de usuarios. El llamador debe mantener g_mutex. */
+/* Las funciones siguientes operan sobre g_users y requieren que el llamador mantenga g_mutex. */
 
-/* Busca un usuario por nombre. Requiere g_mutex. */
+/* Busca un usuario por nombre. */
 static user_t *find_user(const char *name)
 {
     user_t *u = g_users;
@@ -220,7 +217,7 @@ static user_t *find_user(const char *name)
     return NULL;
 }
 
-/* Crea y registra un nuevo usuario. Requiere g_mutex. */
+/* Crea y añade un nuevo usuario a la lista. */
 static user_t *create_user(const char *name)
 {
     user_t *u = (user_t *)calloc(1, sizeof(user_t));
@@ -243,7 +240,7 @@ static void free_messages(message_t *m)
     }
 }
 
-/* Elimina un usuario y sus mensajes pendientes. Requiere g_mutex. */
+/* Elimina un usuario y libera sus mensajes pendientes. */
 static void remove_user(const char *name)
 {
     user_t **pp = &g_users;
@@ -259,10 +256,7 @@ static void remove_user(const char *name)
     }
 }
 
-/*
- * remove_pending – elimina el primer mensaje pendiente que coincide con
- * id + sender de la cola de un usuario. Requiere g_mutex.
- */
+/* Elimina de la cola del usuario el primer mensaje pendiente con id y sender dados. */
 static void remove_pending(user_t *u, unsigned int id, const char *sender)
 {
     message_t **pp = &u->pending;
@@ -277,18 +271,13 @@ static void remove_pending(user_t *u, unsigned int id, const char *sender)
     }
 }
 
-/*
- * next_msg_id – incrementa el último id asignado del usuario.
- * En caso de desbordamiento (pasa por 0) asigna 1. Requiere g_mutex.
- */
+/* Incrementa y devuelve el siguiente id de mensaje; salta el valor 0. */
 static unsigned int next_msg_id(user_t *u)
 {
     u->last_msg_id++;
     if (u->last_msg_id == 0) u->last_msg_id = 1;
     return u->last_msg_id;
 }
-
-/* Manejadores de operaciones */
 
 /* REGISTER: registra un nuevo usuario si no existe. */
 static void handle_register(int sock, const char *username)
@@ -330,10 +319,7 @@ static void handle_unregister(int sock, const char *username)
     (void)send(sock, &code, 1, 0);
 }
 
-/*
- * handle_connect – conecta al usuario, guarda su IP:puerto de escucha y
- * entrega todos los mensajes pendientes uno a uno (protocolo §7.4 / §8.6).
- */
+/* CONNECT: marca al usuario como conectado y entrega los mensajes pendientes. */
 static void handle_connect(int sock, const char *username,
                              const char *listen_port, const char *client_ip)
 {
@@ -363,7 +349,7 @@ static void handle_connect(int sock, const char *username,
     (void)send(sock, &code, 1, 0);
     if (code != 0) return;
 
-    /* Entrega de mensajes pendientes: tomar uno a uno con el mutex */
+    /* Entrega de mensajes pendientes */
     while (1) {
         pthread_mutex_lock(&g_mutex);
         user_t *uu = find_user(username);
@@ -371,7 +357,6 @@ static void handle_connect(int sock, const char *username,
             pthread_mutex_unlock(&g_mutex);
             break;
         }
-        /* Extraer el primer mensaje de la cola */
         message_t *m   = uu->pending;
         uu->pending    = m->next;
         m->next        = NULL;
@@ -382,7 +367,6 @@ static void handle_connect(int sock, const char *username,
             printf("s> SEND MESSAGE %u FROM %s TO %s\n",
                    m->id, m->sender, username);
 
-            /* ACK al remitente original si sigue conectado */
             pthread_mutex_lock(&g_mutex);
             user_t *sndr   = find_user(m->sender);
             char s_ip[INET_ADDRSTRLEN] = {0};
@@ -398,7 +382,7 @@ static void handle_connect(int sock, const char *username,
                 (void)send_delivery_ack(s_ip, s_port, m->id, m->filename);
             free(m);
         } else {
-            /* Error de entrega: devolver mensaje a la cola y desconectar */
+            /* Fallo de entrega: devolver mensaje a la cola y marcar desconectado */
             pthread_mutex_lock(&g_mutex);
             user_t *uu2 = find_user(username);
             if (uu2) {
@@ -416,7 +400,7 @@ static void handle_connect(int sock, const char *username,
     }
 }
 
-/* DISCONNECT: desconecta al usuario (borra IP/puerto, cambia estado). */
+/* DISCONNECT: marca al usuario como desconectado y borra su IP/puerto. */
 static void handle_disconnect(int sock, const char *username)
 {
     unsigned char code;
@@ -441,11 +425,8 @@ static void handle_disconnect(int sock, const char *username)
     (void)send(sock, &code, 1, 0);
 }
 
-/*
- * handle_send – gestiona SEND y SENDATTACH.
- * Para SEND, filename debe ser "".
- * Protocolo: §8.5 (cliente→servidor) y §8.6 (entrega).
- */
+/* SEND / SENDATTACH: encola el mensaje y lo entrega si el destinatario está conectado.
+ * Para SEND, filename debe ser "". */
 static void handle_send(int sock, const char *from, const char *to,
                           const char *msg,  const char *filename)
 {
@@ -480,12 +461,10 @@ static void handle_send(int sock, const char *from, const char *to,
     strncpy(m->filename, filename, MAX_FILE - 1);
     m->next = NULL;
 
-    /* Añadir al final de la cola de pendientes del destinatario */
     message_t **pp = &dst->pending;
     while (*pp) pp = &(*pp)->next;
     *pp = m;
 
-    /* Capturar estado de conexión antes de liberar el mutex */
     int  dst_conn = (dst->state == CONNECTED);
     char dst_ip[INET_ADDRSTRLEN] = {0};
     char dst_port[MAX_PORT]      = {0};
@@ -502,7 +481,6 @@ static void handle_send(int sock, const char *from, const char *to,
     }
     pthread_mutex_unlock(&g_mutex);
 
-    /* Responder al remitente: código 0 + identificador */
     code = 0;
     snprintf(id_str, sizeof(id_str), "%u", msg_id);
     (void)send(sock, &code, 1, 0);
@@ -520,18 +498,15 @@ static void handle_send(int sock, const char *from, const char *to,
         int ok = deliver_message(dst_ip, dst_port, &tmp);
         if (ok == 0) {
             printf("s> SEND MESSAGE %u FROM %s TO %s\n", msg_id, from, to);
-
-            /* Eliminar de pendientes (ya entregado) */
             pthread_mutex_lock(&g_mutex);
             user_t *dst2 = find_user(to);
             if (dst2) remove_pending(dst2, msg_id, from);
             pthread_mutex_unlock(&g_mutex);
 
-            /* ACK al remitente */
             if (src_conn)
                 (void)send_delivery_ack(src_ip, src_port, msg_id, filename);
         } else {
-            /* Error de entrega: marcar destino como desconectado */
+            /* Fallo de entrega: marcar destino como desconectado */
             pthread_mutex_lock(&g_mutex);
             user_t *dst2 = find_user(to);
             if (dst2) {
@@ -547,10 +522,7 @@ static void handle_send(int sock, const char *from, const char *to,
     }
 }
 
-/*
- * handle_users – devuelve la lista de usuarios conectados (protocolo §8.7).
- * Construye un snapshot con el mutex y envía los datos sin mantener el lock.
- */
+/* USERS: devuelve la lista de usuarios conectados. */
 static void handle_users(int sock, const char *username)
 {
     unsigned char code;
@@ -575,7 +547,6 @@ static void handle_users(int sock, const char *username)
         return;
     }
 
-    /* Construir snapshot dinámico de usuarios conectados */
     code = 0;
     user_t *u = g_users;
     while (u) {
@@ -588,7 +559,10 @@ static void handle_users(int sock, const char *username)
                 names = tmp;
                 cap   = newcap;
             }
-            names[count] = strdup(u->name);
+            if (asprintf(&names[count], "%s::%s::%s",
+                         u->name, u->ip, u->port) < 0) {
+                names[count] = NULL;
+            }
             if (!names[count]) { code = 2; break; }
             count++;
         }
@@ -610,7 +584,6 @@ static void handle_users(int sock, const char *username)
         return;
     }
 
-    /* Enviar número de usuarios y sus nombres */
     char count_str[32];
     snprintf(count_str, sizeof(count_str), "%d", count);
     (void)send_str(sock, count_str);
@@ -622,72 +595,80 @@ static void handle_users(int sock, const char *username)
     free(names);
 }
 
-/* Hilo por conexión */
-
-/*
- * handle_client – lee la operación del socket y despacha al manejador
- * correspondiente. Se ejecuta en un hilo independiente por cada conexión.
- */
+/* Hilo por conexión: lee la operación del socket y despacha al manejador correspondiente. */
 static void *handle_client(void *arg)
 {
     int sock = *(int *)arg;
     free(arg);
 
-    /* Obtener IP del cliente a partir del socket */
     struct sockaddr_in addr;
     socklen_t          addrlen = sizeof(addr);
     char               client_ip[INET_ADDRSTRLEN] = "0.0.0.0";
     if (getpeername(sock, (struct sockaddr *)&addr, &addrlen) == 0)
         inet_ntop(AF_INET, &addr.sin_addr, client_ip, sizeof(client_ip));
 
-    /* Leer cadena de operación */
     char op[MAX_NAME];
     if (recv_str(sock, op, sizeof(op)) != 0) {
         close(sock);
         return NULL;
     }
 
-    /* Despachar según la operación */
     if (strcmp(op, "REGISTER") == 0) {
         char user[MAX_NAME];
-        if (recv_str(sock, user, sizeof(user)) == 0)
+        if (recv_str(sock, user, sizeof(user)) == 0) {
+            call_log_rpc(user, "REGISTER");
             handle_register(sock, user);
+        }
 
     } else if (strcmp(op, "UNREGISTER") == 0) {
         char user[MAX_NAME];
-        if (recv_str(sock, user, sizeof(user)) == 0)
+        if (recv_str(sock, user, sizeof(user)) == 0) {
+            call_log_rpc(user, "UNREGISTER");
             handle_unregister(sock, user);
+        }
 
     } else if (strcmp(op, "CONNECT") == 0) {
         char user[MAX_NAME], lport[MAX_PORT];
         if (recv_str(sock, user,  sizeof(user))  == 0 &&
-            recv_str(sock, lport, sizeof(lport)) == 0)
+            recv_str(sock, lport, sizeof(lport)) == 0) {
+            call_log_rpc(user, "CONNECT");
             handle_connect(sock, user, lport, client_ip);
+        }
 
     } else if (strcmp(op, "DISCONNECT") == 0) {
         char user[MAX_NAME];
-        if (recv_str(sock, user, sizeof(user)) == 0)
+        if (recv_str(sock, user, sizeof(user)) == 0) {
+            call_log_rpc(user, "DISCONNECT");
             handle_disconnect(sock, user);
+        }
 
     } else if (strcmp(op, "SEND") == 0) {
         char from[MAX_NAME], to[MAX_NAME], msg[MAX_MSG];
         if (recv_str(sock, from, sizeof(from)) == 0 &&
             recv_str(sock, to,   sizeof(to))   == 0 &&
-            recv_str(sock, msg,  sizeof(msg))  == 0)
+            recv_str(sock, msg,  sizeof(msg))  == 0) {
+            call_log_rpc(from, "SEND");
             handle_send(sock, from, to, msg, "");
+        }
 
     } else if (strcmp(op, "SENDATTACH") == 0) {
         char from[MAX_NAME], to[MAX_NAME], msg[MAX_MSG], file[MAX_FILE];
         if (recv_str(sock, from, sizeof(from)) == 0 &&
             recv_str(sock, to,   sizeof(to))   == 0 &&
             recv_str(sock, msg,  sizeof(msg))  == 0 &&
-            recv_str(sock, file, sizeof(file)) == 0)
+            recv_str(sock, file, sizeof(file)) == 0) {
+            char log_op[MAX_NAME + MAX_FILE];
+            snprintf(log_op, sizeof(log_op), "SENDATTACH %s", file);
+            call_log_rpc(from, log_op);
             handle_send(sock, from, to, msg, file);
+        }
 
     } else if (strcmp(op, "USERS") == 0) {
         char user[MAX_NAME];
-        if (recv_str(sock, user, sizeof(user)) == 0)
+        if (recv_str(sock, user, sizeof(user)) == 0) {
+            call_log_rpc(user, "USERS");
             handle_users(sock, user);
+        }
     }
 
     close(sock);
@@ -698,7 +679,14 @@ int main(int argc, char *argv[])
 {
     int port = -1;
 
-    /* Parseo de -p <puerto> */
+    setvbuf(stdout, NULL, _IOLBF, 0);
+
+    const char *log_ip = getenv("LOG_RPC_IP");
+    if (log_ip && log_ip[0] != '\0') {
+        strncpy(g_rpc_ip, log_ip, sizeof(g_rpc_ip) - 1);
+        g_rpc_ip[sizeof(g_rpc_ip) - 1] = '\0';
+    }
+
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "-p") == 0) {
             port = atoi(argv[i + 1]);
@@ -710,14 +698,12 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /* Instalar manejador SIGINT */
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = sigint_handler;
     sigemptyset(&sa.sa_mask);
     sigaction(SIGINT, &sa, NULL);
 
-    /* Crear socket TCP de escucha */
     g_server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (g_server_fd < 0) { perror("socket"); return 1; }
 
@@ -737,14 +723,12 @@ int main(int argc, char *argv[])
         perror("listen"); return 1;
     }
 
-    /* Mensaje de arranque */
     char local_ip[INET_ADDRSTRLEN];
     get_local_ip(local_ip, sizeof(local_ip));
     printf("s> init server %s:%d\n", local_ip, port);
     printf("s> ");
     fflush(stdout);
 
-    /* Bucle de aceptación – un hilo por conexión */
     while (1) {
         struct sockaddr_in cli;
         socklen_t          cli_len = sizeof(cli);
@@ -765,6 +749,5 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Inalcanzable – la limpieza se hace en sigint_handler */
     return 0;
 }

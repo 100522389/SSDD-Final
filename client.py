@@ -22,6 +22,7 @@ class client :
     _listen_port   = None          # puerto elegido para el hilo receptor
     _listen_thread = None          # hilo receptor de mensajes
     _connected_users = {}          # {username: (ip, port)} – actualizado con USERS (P2)
+    _zeep_client   = None          # cliente Zeep cacheado para el servicio de normalización
 
     # Utilidades de protocolo
 
@@ -57,10 +58,11 @@ class client :
         """
         try:
             from zeep import Client as ZeepClient
-            wsdl = "http://localhost:7789/?wsdl"
-            wc = ZeepClient(wsdl)
-            return wc.service.normalize(message)
+            if client._zeep_client is None:
+                client._zeep_client = ZeepClient("http://localhost:7789/?wsdl")
+            return client._zeep_client.service.normalize(message)
         except Exception:
+            client._zeep_client = None
             return message
 
     # Hilo de escucha de mensajes entrantes
@@ -236,17 +238,20 @@ class client :
             return client.RC.OK
         elif code == 1:
             client._listen_sock.close()
-            client._listen_sock = None
+            client._listen_sock   = None
+            client._listen_thread = None
             print("c> CONNECT FAIL, USER DOES NOT EXIST")
             return client.RC.USER_ERROR
         elif code == 2:
             client._listen_sock.close()
-            client._listen_sock = None
+            client._listen_sock   = None
+            client._listen_thread = None
             print("c> USER ALREADY CONNECTED")
             return client.RC.USER_ERROR
         else:
             client._listen_sock.close()
-            client._listen_sock = None
+            client._listen_sock   = None
+            client._listen_thread = None
             print("c> CONNECT FAIL")
             return client.RC.ERROR
 
@@ -322,7 +327,8 @@ class client :
             except Exception:
                 pass
             client._listen_sock = None
-        client._username = None
+        client._listen_thread = None
+        client._username      = None
 
         if code == 0:
             print("c> DISCONNECT OK")
@@ -518,6 +524,8 @@ class client :
 
                     elif(line[0]=="QUIT") :
                         if (len(line) == 1) :
+                            if client._username is not None:
+                                client.disconnect(client._username)
                             break
                         else :
                             print("Syntax error. Use: QUIT")

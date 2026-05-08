@@ -1,0 +1,34 @@
+# Binarios compilados
+server
+rpc_server
+*.o
+*.exe
+
+# Archivos generados por rpcgen
+log_clnt.c
+log_svc.c
+log_xdr.c
+log.h
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+.venv/
+env/
+
+# Logs
+*.log
+*.tmp
+
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*~
+
+Práctica_P1_25_26.txt
+Práctica_P2_25_26.txt

@@ -1,42 +1,33 @@
 ﻿# Makefile – Servicio de mensajería distribuida
 # Sistemas Distribuidos – UC3M 2025-2026
-#
-# Uso:
-#   make          → compila server y rpc_server
-#   make server   → compila solo el servidor de mensajería
-#   make rpc      → genera stubs RPC y compila rpc_server
-#   make clean    → elimina binarios y ficheros generados
 
 CC      = gcc
-CFLAGS  = -std=gnu99 -Wall -Wextra -pthread
-LDFLAGS = -pthread
+CFLAGS  = -std=gnu99 -Wall -Wextra -pthread -I/usr/include/tirpc
+LDFLAGS = -pthread -ltirpc
 
-# Servidor de mensajería (Parte 1)
-SERVER_TARGET = server
-SERVER_SRC    = server.c
+SERVER_TARGET  = server
+SERVER_SRC     = server.c
 
-# Servidor RPC de log (Parte 2)
-RPC_IFACE     = log.x
-RPC_TARGET    = rpc_server
-# rpcgen genera: log_clnt.c  log_svc.c  log_xdr.c  log.h
-RPC_GENERATED = log_clnt.c log_svc.c log_xdr.c log.h
-RPC_SRC       = rpc_server.c log_svc.c log_xdr.c
-
-# Reglas
+RPC_IFACE      = log.x
+RPC_TARGET     = rpc_server
+RPC_GENERATED  = log_clnt.c log_svc.c log_xdr.c log.h
+RPC_SRC        = rpc_server.c log_svc.c log_xdr.c
+RPC_CLIENT_SRC = log_clnt.c log_xdr.c
 
 .PHONY: all server rpc clean
 
 all: server rpc
 
-server: $(SERVER_SRC)
-	$(CC) $(CFLAGS) -o $(SERVER_TARGET) $(SERVER_SRC) $(LDFLAGS)
+server: $(SERVER_SRC) $(RPC_GENERATED)
+	$(CC) $(CFLAGS) -o $(SERVER_TARGET) $(SERVER_SRC) $(RPC_CLIENT_SRC) $(LDFLAGS)
 
 rpc: $(RPC_GENERATED) $(RPC_SRC)
-	$(CC) $(CFLAGS) -o $(RPC_TARGET) $(RPC_SRC)
+	$(CC) $(CFLAGS) -o $(RPC_TARGET) $(RPC_SRC) $(LDFLAGS)
 
-# Generar stubs RPC a partir de la interfaz .x
+# Genera los stubs RPC a partir de la interfaz XDR
 $(RPC_GENERATED): $(RPC_IFACE)
-	rpcgen -a $(RPC_IFACE)
+	rpcgen -N $(RPC_IFACE)
 
 clean:
-	rm -f $(SERVER_TARGET) $(RPC_TARGET) $(RPC_GENERATED)
+	rm -f $(SERVER_TARGET) $(RPC_TARGET) $(RPC_GENERATED) *.o
+
