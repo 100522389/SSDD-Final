@@ -22,7 +22,7 @@ server: $(SERVER_SRC) $(RPC_GENERATED)
 	$(CC) $(CFLAGS) -o $(SERVER_TARGET) $(SERVER_SRC) $(RPC_CLIENT_SRC) $(LDFLAGS)
 
 rpc: $(RPC_GENERATED) $(RPC_SRC)
-	$(CC) $(CFLAGS) -o $(RPC_TARGET) $(RPC_SRC) $(LDFLAGS)
+	$(CC) $(CFLAGS) -Wno-cast-function-type -Wno-unused-parameter -o $(RPC_TARGET) $(RPC_SRC) $(LDFLAGS)
 
 # Genera los stubs RPC a partir de la interfaz XDR
 $(RPC_GENERATED): $(RPC_IFACE)

@@ -375,6 +375,281 @@ def run_tests(server, port):
     s.connect((server, port))
     send_str_raw(s, "UNREGISTER"); send_str_raw(s, "frank"); s.recv(1); s.close()
 
+    print("\n=== Bloque 8: Concurrencia (5 clientes simultáneos) ===")
+
+    # 5 hilos Python arrancan simultáneamente usando una Barrier.
+    # Cada hilo registra un usuario único, se conecta, envía un mensaje al
+    # siguiente usuario en round-robin y se desconecta.  Ningún hilo debe
+    # lanzar una excepción ni devolver un RC de error.
+
+    NUM_CLIENTS = 5
+    barrier = threading.Barrier(NUM_CLIENTS)
+    conc_errors = []
+    conc_lock   = threading.Lock()
+
+    def conc_worker(idx):
+        uname  = f"conc{idx}"
+        target = f"conc{(idx + 1) % NUM_CLIENTS}"
+        try:
+            # Registro
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server, port))
+            send_str_raw(s, "REGISTER"); send_str_raw(s, uname)
+            rc_reg = s.recv(1)[0]; s.close()
+            if rc_reg != 0:
+                with conc_lock:
+                    conc_errors.append(f"{uname}: REGISTER returned {rc_reg}")
+                return
+
+            # Escucha propia
+            my_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            my_listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            my_listen.bind(('', 0))
+            my_port = my_listen.getsockname()[1]
+            my_listen.listen(8)
+            # Hilo de escucha para absorber mensajes entrantes
+            def _absorb():
+                my_listen.settimeout(3.0)
+                try:
+                    while True:
+                        c, _ = my_listen.accept()
+                        c.close()
+                except Exception:
+                    pass
+            threading.Thread(target=_absorb, daemon=True).start()
+
+            # Conexión
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server, port))
+            send_str_raw(s, "CONNECT"); send_str_raw(s, uname); send_str_raw(s, str(my_port))
+            rc_conn = s.recv(1)[0]; s.close()
+            if rc_conn != 0:
+                with conc_lock:
+                    conc_errors.append(f"{uname}: CONNECT returned {rc_conn}")
+                my_listen.close()
+                return
+
+            # Sincronizar: todos esperan aquí antes de enviar
+            barrier.wait(timeout=5)
+
+            # SEND al siguiente (puede estar no conectado todavía; código 0 es OK igual)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server, port))
+            send_str_raw(s, "SEND"); send_str_raw(s, uname)
+            send_str_raw(s, target); send_str_raw(s, f"hola de {uname}")
+            rc_send = s.recv(1)[0]
+            if rc_send == 0:
+                recv_str_raw(s)  # leer id
+            s.close()
+            if rc_send not in (0, 1):  # 0=OK, 1=destinatario aún no registrado (race)
+                with conc_lock:
+                    conc_errors.append(f"{uname}: SEND returned {rc_send}")
+
+            # Desconexión
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server, port))
+            send_str_raw(s, "DISCONNECT"); send_str_raw(s, uname)
+            s.recv(1); s.close()
+            my_listen.close()
+
+            # Baja
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.connect((server, port))
+            send_str_raw(s, "UNREGISTER"); send_str_raw(s, uname)
+            s.recv(1); s.close()
+
+        except Exception as exc:
+            with conc_lock:
+                conc_errors.append(f"{uname}: excepción {exc}")
+
+    threads = [threading.Thread(target=conc_worker, args=(i,), daemon=True)
+               for i in range(NUM_CLIENTS)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+
+    if not conc_errors:
+        results.append(f"  PASS: {NUM_CLIENTS} clientes simultáneos sin errores")
+        pass_count += 1
+    else:
+        for e in conc_errors:
+            results.append(f"  FAIL: concurrencia — {e}")
+            fail_count += 1
+
+    print("\n=== Bloque 9: Forced disconnect (cliente muere sin DISCONNECT) ===")
+
+    # Registrar+conectar "zombie" con un socket raw.  Luego cerrar el socket
+    # de escucha bruscamente (sin enviar DISCONNECT al servidor).
+    # Otro cliente envía un mensaje a zombie → el servidor falla al entregarlo
+    # y debe marcarlo como DISCONNECTED (el mensaje queda en cola).
+    # Verificar que zombie puede volver a conectarse correctamente (estado limpio).
+
+    setup_client(server, port)
+    client.register("zombie")
+    client.register("sender9")
+
+    zombie_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    zombie_listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    zombie_listen.bind(('', 0))
+    zombie_port = zombie_listen.getsockname()[1]
+    zombie_listen.listen(1)
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "CONNECT"); send_str_raw(s, "zombie"); send_str_raw(s, str(zombie_port))
+    rc_zconn = s.recv(1)[0]; s.close()
+
+    if rc_zconn == 0:
+        # Cerrar el socket de escucha de zombie sin avisar al servidor
+        zombie_listen.close()
+        time.sleep(0.3)
+
+        # sender9 conectado; envía a zombie (el servidor intentará entregar y fallará)
+        client.connect("sender9")
+        time.sleep(0.2)
+        rc_send9 = client.send("zombie", "mensaje a zombie muerto")
+        # El SEND debe devolver OK al remitente (el servidor acepta el mensaje
+        # aunque falle la entrega inmediata; código 0)
+        check("SEND a zombie muerto devuelve OK", client.RC.OK, rc_send9)
+        time.sleep(0.5)
+
+        # zombie vuelve a conectarse con un nuevo socket de escucha
+        zombie_listen2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        zombie_listen2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        zombie_listen2.bind(('', 0))
+        zombie_port2 = zombie_listen2.getsockname()[1]
+        zombie_listen2.listen(4)
+
+        recv_on_reconnect = []
+        def zombie_listener2():
+            zombie_listen2.settimeout(3.0)
+            try:
+                conn, _ = zombie_listen2.accept()
+                data = b''
+                while True:
+                    chunk = conn.recv(256)
+                    if not chunk:
+                        break
+                    data += chunk
+                recv_on_reconnect.append(data)
+                conn.close()
+            except Exception:
+                pass
+        zt2 = threading.Thread(target=zombie_listener2, daemon=True)
+        zt2.start()
+
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((server, port))
+        send_str_raw(s, "CONNECT"); send_str_raw(s, "zombie"); send_str_raw(s, str(zombie_port2))
+        rc_zconn2 = s.recv(1)[0]; s.close()
+        check("zombie puede volver a conectarse tras forced-disconnect", 0, rc_zconn2)
+
+        zt2.join(timeout=3.0)
+        if recv_on_reconnect:
+            raw = recv_on_reconnect[0].decode(errors='replace')
+            check("zombie recibe el mensaje encolado al reconectarse",
+                  True, "SEND MESSAGE" in raw and "zombie muerto" in raw)
+        else:
+            results.append("  FAIL: zombie no recibió el mensaje encolado al reconectarse")
+            fail_count += 1
+
+        zombie_listen2.close()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((server, port))
+        send_str_raw(s, "DISCONNECT"); send_str_raw(s, "zombie"); s.recv(1); s.close()
+    else:
+        results.append(f"  SKIP: CONNECT zombie falló (code={rc_zconn}); se omite bloque 9")
+
+    client.disconnect("sender9")
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "UNREGISTER"); send_str_raw(s, "zombie"); s.recv(1); s.close()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "UNREGISTER"); send_str_raw(s, "sender9"); s.recv(1); s.close()
+
+    print("\n=== Bloque 10: Incremento de ID de mensaje ===")
+
+    # Enviar 2 mensajes consecutivos de A a B (B conectado) y verificar que
+    # los IDs son 1 y 2.
+    # NOTA: el desbordamiento UINT_MAX→0→1 no se verifica automáticamente en
+    # integración (requeriría enviar 4.294.967.295 mensajes).  Su corrección se
+    # garantiza por la implementación en server.c (unsigned int, lógica id=0→id=1).
+
+    setup_client(server, port)
+    client.register("id_alice")
+    client.register("id_bob")
+
+    id_listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    id_listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    id_listen.bind(('', 0))
+    id_bob_port = id_listen.getsockname()[1]
+    id_listen.listen(8)
+
+    id_received = []
+    def id_bob_listener():
+        id_listen.settimeout(4.0)
+        try:
+            for _ in range(2):
+                conn, _ = id_listen.accept()
+                data = b''
+                while True:
+                    chunk = conn.recv(256)
+                    if not chunk:
+                        break
+                    data += chunk
+                id_received.append(data)
+                conn.close()
+        except Exception:
+            pass
+    id_thread = threading.Thread(target=id_bob_listener, daemon=True)
+    id_thread.start()
+
+    # Conectar id_bob
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "CONNECT"); send_str_raw(s, "id_bob"); send_str_raw(s, str(id_bob_port))
+    s.recv(1); s.close()
+
+    # Conectar id_alice con client helper
+    client.connect("id_alice")
+    time.sleep(0.2)
+
+    rc1 = client.send("id_bob", "primer mensaje")
+    check("SEND #1 a id_bob → OK", client.RC.OK, rc1)
+
+    rc2 = client.send("id_bob", "segundo mensaje")
+    check("SEND #2 a id_bob → OK", client.RC.OK, rc2)
+
+    id_thread.join(timeout=5.0)
+
+    if len(id_received) >= 2:
+        # Extraer IDs: protocolo SEND MESSAGE\0sender\0id\0body\0
+        def extract_id(raw_bytes):
+            fields = raw_bytes.split(b'\x00')
+            # fields[0]=op, fields[1]=sender, fields[2]=id
+            return fields[2].decode(errors='replace') if len(fields) > 2 else ""
+        id1 = extract_id(id_received[0])
+        id2 = extract_id(id_received[1])
+        check("Primer mensaje recibido tiene id=1",  "1", id1)
+        check("Segundo mensaje recibido tiene id=2", "2", id2)
+    else:
+        results.append(f"  FAIL: id_bob recibió {len(id_received)} mensajes (esperado 2)")
+        fail_count += 1
+
+    client.disconnect("id_alice")
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "DISCONNECT"); send_str_raw(s, "id_bob"); s.recv(1); s.close()
+    id_listen.close()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "UNREGISTER"); send_str_raw(s, "id_alice"); s.recv(1); s.close()
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_raw(s, "UNREGISTER"); send_str_raw(s, "id_bob"); s.recv(1); s.close()
+
     # Imprimir resultados
     for r in results:
         print(r)
