@@ -67,14 +67,20 @@ LOG_RPC_IP=localhost ./server -p 8888
 /tmp/ssdd_venv/bin/python3 web_service.py
 ```
 
-Escucha en el puerto **7789**. El servidor de mensajería lo usa internamente para normalizar los mensajes.
+Escucha en el puerto **7789**. El **cliente Python** lo usa para normalizar los mensajes antes de enviarlos.
 
 ---
 
 ## Uso — Cliente interactivo
 
 ```bash
-/tmp/ssdd_venv/bin/python3 client.py
+/tmp/ssdd_venv/bin/python3 client.py -s <servidor> -p <puerto>
+```
+
+Ejemplo local:
+
+```bash
+/tmp/ssdd_venv/bin/python3 client.py -s localhost -p 8888
 ```
 
 Comandos disponibles en el prompt `c>`:

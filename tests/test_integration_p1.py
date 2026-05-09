@@ -14,6 +14,7 @@ import time
 
 # Importar la clase client del mismo directorio
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from client import client
 
 
