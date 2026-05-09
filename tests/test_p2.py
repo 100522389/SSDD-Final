@@ -407,7 +407,42 @@ def test_getfile(server, port):
     client._listen_sock = None
 
 
-# BLOQUE 5: GETFILE — usuario no conectado
+# BLOQUE 5: SENDATTACH — usuario no registrado (RC = 1)
+
+def test_sendattach_user_not_exist(server, port):
+    print("\n=== Bloque 5: SENDATTACH a usuario no registrado ===")
+    setup(server, port)
+
+    client.register('sne_alice')
+    alice_sock, alice_port = make_listen_sock()
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_sock(s, "CONNECT")
+    send_str_sock(s, "sne_alice")
+    send_str_sock(s, str(alice_port))
+    s.recv(1)
+    s.close()
+
+    # Enviar SENDATTACH a un usuario que no existe en el servidor
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((server, port))
+    send_str_sock(s, "SENDATTACH")
+    send_str_sock(s, "sne_alice")
+    send_str_sock(s, "ghost_user_xyz")
+    send_str_sock(s, "mensaje a fantasma")
+    send_str_sock(s, "/tmp/ghost_file.txt")
+    code = s.recv(1)[0]
+    s.close()
+
+    check("SENDATTACH a usuario no registrado devuelve código 1", code == 1)
+
+    alice_sock.close()
+    client.disconnect('sne_alice')
+    client.unregister('sne_alice')
+
+
+# BLOQUE 6: GETFILE — usuario no conectado
 
 def test_getfile_not_connected(server, port):
     print("\n=== Bloque 5: GETFILE con usuario no conectado ===")
@@ -442,6 +477,7 @@ def run_tests(server, port):
     test_sendattach_queued(server, port)
     test_users_p2(server, port)
     test_getfile(server, port)
+    test_sendattach_user_not_exist(server, port)
     test_getfile_not_connected(server, port)
 
     print(f"\n=== Resultado: {PASS} PASS / {FAIL} FAIL ===")

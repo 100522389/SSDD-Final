@@ -27,6 +27,8 @@ for i in $(seq 1 20); do
 done
 
 # Ejecutar tests
+export PYTHONPATH=/app
+
 PASS=0
 FAIL=0
 declare -a results
@@ -61,7 +63,7 @@ kill $WS_PID 2>/dev/null || true
 # Resumen
 echo ""
 echo "=========================================="
-echo " RESUMEN FINAL (Docker)"
+echo " RESUMEN (Docker)"
 echo "=========================================="
 for r in "${results[@]}"; do
     echo "$r"

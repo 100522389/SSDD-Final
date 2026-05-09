@@ -69,20 +69,25 @@ client.register('alice')
 client.register('bob')
 
 # Conectar alice → _username = 'alice'
+# bob permanece desconectado para que los mensajes se encolen
 client.connect('alice')
 
 # SEND desde alice a bob  (from=alice queda en el log)
 client.send('bob', 'hola bob')
 
-# USERS con alice conectada
+# SENDATTACH desde alice a bob con fichero  → log: alice\tSENDATTACH /tmp/rpc_test_file.txt
+# Firma: sendAttach(user, file, message)
+client.sendAttach('bob', '/tmp/rpc_test_file.txt', 'adjunto rpc')
+
+# USERS con alice conectada → log: alice\tUSERS
 client.users()
 
 # Desconectar alice
-client.disconnect('alice')
+client.disconnect('alice')   # _username queda en None
 
-# Conectar bob → _username = 'bob'
+# Conectar bob → _username = 'bob' → log: bob\tCONNECT
 client.connect('bob')
-client.disconnect('bob')
+client.disconnect('bob')     # log: bob\tDISCONNECT
 
 # Dar de baja
 client.unregister('alice')
@@ -110,16 +115,18 @@ check_line() {
 }
 
 echo "=== Verificación de entradas de log ==="
-check_line "REGISTER alice"      "alice	REGISTER"
-check_line "REGISTER bob"        "bob	REGISTER"
-check_line "CONNECT alice"       "alice	CONNECT"
-check_line "CONNECT bob"         "bob	CONNECT"
-check_line "SEND alice"          "alice	SEND"
-check_line "USERS alice"         "alice	USERS"
-check_line "DISCONNECT alice"    "alice	DISCONNECT"
-check_line "DISCONNECT bob"      "bob	DISCONNECT"
-check_line "UNREGISTER alice"    "alice	UNREGISTER"
-check_line "UNREGISTER bob"      "bob	UNREGISTER"
+check_line "REGISTER alice"            "alice	REGISTER"
+check_line "REGISTER bob"              "bob	REGISTER"
+check_line "CONNECT alice"             "alice	CONNECT"
+check_line "CONNECT bob"               "bob	CONNECT"
+check_line "SEND alice"                "alice	SEND"
+check_line "SENDATTACH alice"          "alice	SENDATTACH"
+check_line "SENDATTACH filename"       "/tmp/rpc_test_file.txt"
+check_line "USERS alice"               "alice	USERS"
+check_line "DISCONNECT alice"          "alice	DISCONNECT"
+check_line "DISCONNECT bob"            "bob	DISCONNECT"
+check_line "UNREGISTER alice"          "alice	UNREGISTER"
+check_line "UNREGISTER bob"            "bob	UNREGISTER"
 
 TOTAL=$((PASS+FAIL))
 echo ""

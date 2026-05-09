@@ -161,7 +161,7 @@ fi
 
 # Resumen final
 echo "================================================================="
-echo " RESUMEN DE RESULTADOS"
+echo " RESUMEN"
 echo "================================================================="
 print_rc() {
     local label="$1" rc="$2" skip="$3"

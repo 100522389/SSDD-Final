@@ -103,7 +103,28 @@ Los mensajes dirigidos a un usuario desconectado se almacenan en el servidor y s
 
 ## Pruebas
 
-Las pruebas automatizadas se encuentran en el directorio `tests/`. Se puede ejecutar la suite completa con Docker o directamente en Linux.
+Las pruebas automatizadas se encuentran en el directorio `tests/` y cubren **+90 casos de prueba** distribuidos en cinco suites. El script `tests/run_prev.sh` compila el proyecto, arranca y para todos los procesos necesarios, y ejecuta las cinco suites en secuencia.
+
+| Suite | Fichero | Casos |
+| --- | --- | --- |
+| Integración Parte 1 | `test_integration_p1.py` | 28 |
+| Integración Parte 2 | `test_p2.py` | 25 |
+| Servicio web SOAP | `test_web_service.py` | 19 |
+| Protocolo con netcat | `test_phase1.sh` | 11 |
+| Servidor RPC de log | `test_rpc.sh` | 11 |
+
+### Linux / WSL (recomendado)
+
+```bash
+bash tests/run_prev.sh
+```
+
+El script acepta 2 flags opcionales:
+
+| Flag | Efecto |
+| --- | --- |
+| `--no-rpc` | Omite la suite `test_rpc.sh` (útil si `rpcbind` no está disponible) |
+| `--no-web` | Omite las pruebas de integración del servicio web |
 
 ### Docker
 
@@ -111,47 +132,19 @@ Las pruebas automatizadas se encuentran en el directorio `tests/`. Se puede ejec
 docker compose up --build
 ```
 
-El contenedor `cli` ejecuta automáticamente:
+El contenedor `cli` ejecuta `tests/run_docker_tests.sh`, que cubre las suites de integración P1, P2 y servicio web contra los contenedores `srv` y `rpc`.
 
-- `test_integration_p1.py` — pruebas de integración Parte 1 (REGISTER, UNREGISTER, CONNECT, DISCONNECT, SEND, USERS, mensajes pendientes)
-- `test_p2.py` — pruebas de la Parte 2 (SENDATTACH conectado y en cola, USERS con IP:puerto, GETFILE P2P)
-- `test_web_service.py` — prueba unitaria de normalización
+### Descripción de las suites
 
-### Linux con servidor ya arrancado
+**Integración - Parte 1** (`test_integration_p1.py`): valida los comandos — REGISTER, UNREGISTER, CONNECT, DISCONNECT, SEND y USERS — incluyendo códigos ante operaciones inválidas y la entrega de mensajes encolados.
 
-```bash
-# Terminal 1: servidor RPC
-sudo rpcbind
-./rpc_server
+**Integración - Parte 2** (`test_p2.py`): valida SENDATTACH con usuario conectado y con usuario desconectado (entrega diferida), el formato extendido de USERS (`usuario::IP::puerto`), GETFILE para transferencia P2P de ficheros, y el código de error de SENDATTACH ante usuario no registrado.
 
-# Terminal 2: servidor de mensajería
-LOG_RPC_IP=localhost ./server -p 8888
+**Servicio web** (`test_web_service.py`): operación `normalize` del servicio web; incluye tanto pruebas unitarias de la función de normalización como pruebas de integración contra el servidor SOAP en ejecución.
 
-# Terminal 3: servicio web
-python3 web_service.py
+**Protocolo con netcat** (`test_phase1.sh`): envía tramas binarias directamente mediante `nc` para verificar el manejo del protocolo a nivel de bytes — longitud de campos, operaciones, códigos de retorno y cierre de conexión.
 
-# Terminal 4: tests
-python3 tests/test_integration_p1.py -s localhost -p 8888
-python3 tests/test_p2.py            -s localhost -p 8888
-python3 tests/test_web_service.py
-```
-
-### Casos de prueba
-
-| Test | Qué verifica |
-| --- | --- |
-| REGISTER duplicado | Devuelve código 1 (usuario ya existe) |
-| UNREGISTER usuario inexistente | Devuelve código 1 |
-| CONNECT usuario inexistente | Devuelve código 1 |
-| CONNECT ya conectado | Devuelve código 2 |
-| DISCONNECT no conectado | Devuelve código 2 |
-| SEND a usuario conectado | Entrega inmediata + ACK al remitente |
-| SEND a usuario desconectado | Mensaje encolado + entrega al reconectarse |
-| SENDATTACH a usuario conectado | Entrega con filename + ACK con filename |
-| SENDATTACH a usuario desconectado | Encolado con filename + entrega al reconectarse |
-| USERS formato P2 | Devuelve `user::IP::port` por cada conectado |
-| GETFILE P2P | Transferencia correcta de contenido de fichero |
-| Servicio web normalize | Elimina espacios múltiples |
+**Servidor RPC de log** (`test_rpc.sh`): arranca `rpcbind` y `rpc_server`, ejecuta una secuencia de operaciones mediante el cliente Python y comprueba que el servidor RPC registra cada operación en el formato correcto (`usuario\tOPERACIÓN`), incluyendo REGISTER, CONNECT, SEND, SENDATTACH con nombre de fichero, USERS y DISCONNECT.
 
 ---
 
