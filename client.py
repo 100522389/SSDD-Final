@@ -4,7 +4,7 @@ import socket
 import threading
 
 class client :
-
+    # Continuamos la estructura que nos dan para el cliente:
     # ******************** TYPES *********************
     # * @brief Return codes for the protocol methods
     class RC(Enum) :
@@ -108,7 +108,7 @@ class client :
                     msg_id   = client._recv_str(conn)
                     body     = client._recv_str(conn)
                     filename = client._recv_str(conn)
-                    print(f"\ns> MESSAGE {msg_id} FROM {sender}")
+                    print(f"\nc> MESSAGE {msg_id} FROM {sender}")
                     print(f"  {body}")
                     print("  END")
                     print(f"  FILE {filename}")
@@ -510,11 +510,11 @@ class client :
 
                     elif(line[0]=="SENDATTACH") :
                         if (len(line) >= 4) :
-                            #  Remove first two words
-                            message = ' '.join(line[3:])
-                            client.sendAttach(line[1], line[2], message)
+                            filename = line[-1]
+                            message  = ' '.join(line[2:-1])
+                            client.sendAttach(line[1], filename, message)
                         else :
-                            print("Syntax error. Usage: SENDATTACH <userName> <filename> <message>")
+                            print("Syntax error. Usage: SENDATTACH <userName> <message> <fileName>")
 
                     elif(line[0]=="GETFILE") :
                         if (len(line) == 4) :

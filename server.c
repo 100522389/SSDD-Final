@@ -54,8 +54,8 @@ static CLIENT          *g_rpc_client  = NULL;
 static pthread_mutex_t  g_rpc_mutex   = PTHREAD_MUTEX_INITIALIZER;
 static char             g_rpc_ip[64]  = "";   /* vacío → RPC desactivado */
 
-/* Envía una entrada de log al servidor ONC-RPC. No-op si LOG_RPC_IP no está definida
- * o el servidor no responde (degradación silenciosa). */
+/* Envía una entrada de log al servidor ONC-RPC. No si LOG_RPC_IP no está definida
+ * o el servidor no responde. */
 static void call_log_rpc(const char *username, const char *operation)
 {
     if (g_rpc_ip[0] == '\0') return;
@@ -89,7 +89,7 @@ static void sigint_handler(int sig)
     exit(0);
 }
 
-/* Rellena buf con la primera IPv4 no-loopback; usa "127.0.0.1" si no encuentra ninguna. */
+/* buf con la primera IPv4, usa "127.0.0.1" si no encuentra ninguna. */
 static void get_local_ip(char *buf, size_t len)
 {
     struct ifaddrs *ifaddr, *ifa;
@@ -180,7 +180,7 @@ static int deliver_message(const char *ip, const char *port,
     return ok;
 }
 
-/* Notifica al remitente la entrega exitosa de un mensaje. */
+/* Notifica al remitente la entrega de un mensaje. */
 static int send_delivery_ack(const char *ip, const char *port,
                               unsigned int id, const char *filename)
 {
@@ -319,7 +319,7 @@ static void handle_unregister(int sock, const char *username)
     (void)send(sock, &code, 1, 0);
 }
 
-/* CONNECT: marca al usuario como conectado y entrega los mensajes pendientes. */
+/* CONNECT: usuario como conectado y entrega los mensajes pendientes. */
 static void handle_connect(int sock, const char *username,
                              const char *listen_port, const char *client_ip)
 {
@@ -382,7 +382,7 @@ static void handle_connect(int sock, const char *username,
                 (void)send_delivery_ack(s_ip, s_port, m->id, m->filename);
             free(m);
         } else {
-            /* Fallo de entrega: devolver mensaje a la cola y marcar desconectado */
+            /* Devolver mensaje a la cola y marcar desconectado */
             pthread_mutex_lock(&g_mutex);
             user_t *uu2 = find_user(username);
             if (uu2) {
@@ -400,9 +400,9 @@ static void handle_connect(int sock, const char *username,
     }
 }
 
-/* DISCONNECT: marca al usuario como desconectado y borra su IP/puerto.
+/* DISCONNECT: usuario como desconectado y borra su IP/puerto.
  * Solo se acepta si la petición proviene de la misma IP con la que el usuario
- * se conectó (requisito del protocolo §8.4). */
+ * se conectó. */
 static void handle_disconnect(int sock, const char *username,
                                const char *client_ip)
 {
@@ -513,7 +513,7 @@ static void handle_send(int sock, const char *from, const char *to,
             if (src_conn)
                 (void)send_delivery_ack(src_ip, src_port, msg_id, filename);
         } else {
-            /* Fallo de entrega: marcar destino como desconectado */
+            /* Marcar destino como desconectado */
             pthread_mutex_lock(&g_mutex);
             user_t *dst2 = find_user(to);
             if (dst2) {
@@ -529,7 +529,7 @@ static void handle_send(int sock, const char *from, const char *to,
     }
 }
 
-/* USERS: devuelve la lista de usuarios conectados. */
+/* USERS: lista de usuarios conectados. */
 static void handle_users(int sock, const char *username)
 {
     unsigned char code;
@@ -602,7 +602,7 @@ static void handle_users(int sock, const char *username)
     free(names);
 }
 
-/* Hilo por conexión: lee la operación del socket y despacha al manejador correspondiente. */
+/* Hilo por conexión, va a manejador */
 static void *handle_client(void *arg)
 {
     int sock = *(int *)arg;
@@ -736,6 +736,7 @@ int main(int argc, char *argv[])
     printf("s> ");
     fflush(stdout);
 
+    // bucle de conexiones
     while (1) {
         struct sockaddr_in cli;
         socklen_t          cli_len = sizeof(cli);

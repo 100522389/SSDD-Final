@@ -1,6 +1,6 @@
 /* rpc_server.c – Implementación del servidor ONC-RPC de log de operaciones.
  * Compilar junto con log_svc.c y log_xdr.c (generados con rpcgen -N log.x).
- * Requiere rpcbind activo en el sistema.
+ * Requiere rpcbind.
  */
 
 #include "log.h"

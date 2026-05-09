@@ -4,13 +4,13 @@ set -e
 PROJ="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJ"
 
-make all 2>/dev/null
+make -C .. all 2>/dev/null
 
-./rpc_server &
+../rpc_server &
 RPC_PID=$!
 sleep 0.3
 
-LOG_RPC_IP=localhost ./server -p 8888 &
+LOG_RPC_IP=localhost ../server -p 8888 &
 SRV_PID=$!
 sleep 0.5
 

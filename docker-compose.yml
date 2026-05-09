@@ -22,7 +22,7 @@
   # Python apuntando al servidor de mensajería (srv:8888).
   cli:
     build: .
-    command: bash /app/run_docker_tests.sh
+    command: bash /app/tests/run_docker_tests.sh
     depends_on:
       - srv
     environment:

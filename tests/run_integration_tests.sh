@@ -10,7 +10,7 @@ pkill -f "server -p 8888" 2>/dev/null || true
 sleep 0.3
 
 # Arrancar servidor
-./server -p 8888 > /tmp/srv_integration.log 2>&1 &
+../server -p 8888 > /tmp/srv_integration.log 2>&1 &
 SRV_PID=$!
 sleep 0.5
 

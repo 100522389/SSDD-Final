@@ -1,4 +1,4 @@
-FROM ubuntu:22.00
+FROM ubuntu:22.04
 
 # Evitar preguntas interactivas durante la instalación
 ENV DEBIAN_FRONTEND=noninteractive

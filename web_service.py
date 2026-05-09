@@ -1,16 +1,12 @@
 """
 web_service.py  –  Servicio web de normalización de mensajes
 
-Expone una operación SOAP "normalize" que elimina espacios repetidos
-de un mensaje de texto.
-
 Uso:
     python3 web_service.py
 
 El servicio queda disponible en http://localhost:7789/?wsdl
 
-Dependencias:
-    pip install spyne lxml
+Dependencias: requirements.txt
 """
 
 import re

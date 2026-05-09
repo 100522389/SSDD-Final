@@ -62,7 +62,7 @@ RPC_RC=0
 
 # 1. Compilar
 echo "=== Compilando ==="
-make all
+make -C ..
 echo ""
 
 # 2. test_phase1.sh (netcat, protocolo P1)
@@ -79,7 +79,7 @@ RPC_PID=""
 if [ "$SKIP_RPC" -eq 0 ] && command -v rpcbind >/dev/null 2>&1; then
     rpcbind 2>/dev/null || true
     sleep 0.3
-    ./rpc_server > /tmp/rpc_prev.log 2>&1 &
+    ../rpc_server > /tmp/rpc_prev.log 2>&1 &
     RPC_PID=$!
     sleep 0.8
     if ! kill -0 "$RPC_PID" 2>/dev/null; then
@@ -96,9 +96,9 @@ fi
 
 # Arrancar servidor de mensajería
 if [ -n "$RPC_PID" ]; then
-    LOG_RPC_IP=localhost ./server -p "$SERVER_PORT" > /tmp/srv_prev.log 2>&1 &
+    LOG_RPC_IP=localhost ../server -p "$SERVER_PORT" > /tmp/srv_prev.log 2>&1 &
 else
-    ./server -p "$SERVER_PORT" > /tmp/srv_prev.log 2>&1 &
+    ../server -p "$SERVER_PORT" > /tmp/srv_prev.log 2>&1 &
 fi
 SRV_PID=$!
 sleep 0.6
@@ -133,7 +133,7 @@ if [ "$SKIP_WEB" -eq 0 ]; then
 
     # 6. test_web_service.py — integración SOAP
     echo "=== test_web_service.py (integración SOAP) ==="
-    "$PYTHON" web_service.py > /tmp/ws_prev.log 2>&1 &
+    "$PYTHON" ../web_service.py > /tmp/ws_prev.log 2>&1 &
     WS_PID=$!
     sleep 1.0
     if kill -0 "$WS_PID" 2>/dev/null; then

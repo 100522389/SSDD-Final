@@ -47,13 +47,13 @@ run_test() {
 }
 
 run_test "test_integration_p1.py" \
-    python3 /app/test_integration_p1.py -s "$SERVER" -p "$PORT"
+    python3 /app/tests/test_integration_p1.py -s "$SERVER" -p "$PORT"
 
 run_test "test_p2.py" \
-    python3 /app/test_p2.py -s "$SERVER" -p "$PORT"
+    python3 /app/tests/test_p2.py -s "$SERVER" -p "$PORT"
 
 run_test "test_web_service.py" \
-    python3 /app/test_web_service.py
+    python3 /app/tests/test_web_service.py
 
 # Detener el servicio web
 kill $WS_PID 2>/dev/null || true

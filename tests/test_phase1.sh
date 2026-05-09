@@ -6,7 +6,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
 
 # Arrancar servidor
-./server -p 8888 > /tmp/srv.log 2>&1 &
+../server -p 8888 > /tmp/srv.log 2>&1 &
 SRV_PID=$!
 sleep 0.5
 
